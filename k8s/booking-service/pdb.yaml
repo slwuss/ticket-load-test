@@ -4,7 +4,7 @@ metadata:
   name: booking-service-pdb
   namespace: ticketing
 spec:
-  minAvailable: 2       # always keep at least 2 pods up during node drains
+  minAvailable: 1
   selector:
     matchLabels:
       app: booking-service

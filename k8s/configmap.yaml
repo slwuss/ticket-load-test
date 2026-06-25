@@ -4,7 +4,7 @@ metadata:
   name: ticketing-config
   namespace: ticketing
 data:
-  sqs-queue-url: "https://sqs.ap-southeast-1.amazonaws.com/<ACCOUNT_ID>/booking-queue.fifo"
+  sqs-queue-url: "https://sqs.ap-southeast-2.amazonaws.com/<ACCOUNT_ID>/booking-queue.fifo"
 ---
 # Template — actual values injected by external-secrets or Terraform outputs
 apiVersion: v1

@@ -94,8 +94,8 @@ print(f'Updated {path} with domain: {value}')
 PY
 
 echo
-echo "Step 1: Installing standard Gateway API CRDs..."
-kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml || exit 1
+echo "Step 1: Installing Gateway API CRDs (experimental channel for TLSRoute/TCPRoute/UDPRoute support)..."
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/experimental-install.yaml || exit 1
 kubectl wait --for=condition=Established crd/gateways.gateway.networking.k8s.io --timeout=120s
 
 echo

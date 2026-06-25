@@ -203,6 +203,7 @@ helm upgrade -i external-dns external-dns/external-dns \
   -n "${NAMESPACE}" \
   --version "${CHART_VERSION}" \
   -f "${VALUES_FILE}" \
+  --set "extraArgs[0]=--aws-region=${AWS_REGION}" \
   --wait --timeout 5m
 
 echo
