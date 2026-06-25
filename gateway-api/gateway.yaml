@@ -15,13 +15,13 @@ spec:
   - name: http
     protocol: HTTP
     port: 80
-    hostname: "<domain>" # put your domain here
+    hostname: "DOMAIN_NAME_PLACEHOLDER"
     allowedRoutes:
       namespaces:
         from: All
   - name: https
     protocol: HTTPS
-    hostname: "<domain>" # put your domain here
+    hostname: "DOMAIN_NAME_PLACEHOLDER"
     port: 443
     allowedRoutes:
       namespaces:

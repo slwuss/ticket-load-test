@@ -23,7 +23,7 @@ if ! command -v kubectl >/dev/null 2>&1; then
   exit 1
 fi
 
-kubectl cluster-info >/dev/null || {
+kubectl cluster-info >/dev/null 2>&1 || {
   echo "Kubernetes cluster not reachable" >&2
   exit 1
 }
@@ -52,7 +52,8 @@ if [[ -z "${DOMAIN_NAME}" ]]; then
   exit 1
 fi
 
-if [[ ! "$DOMAIN_NAME" =~ ^\*\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+DOMAIN_NAME="${DOMAIN_NAME,,}"
+if [[ ! "$DOMAIN_NAME" =~ ^\*\.[a-z0-9.-]+\.[a-z]{2,}$ ]]; then
   echo "Invalid domain format. Example: *.website.com" >&2
   exit 1
 fi
@@ -100,7 +101,7 @@ kubectl wait --for=condition=Established crd/gateways.gateway.networking.k8s.io 
 echo
 echo "Step 2: Installing LBC Gateway API CRDs..."
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v3.4.0/config/crd/gateway/gateway-crds.yaml || exit 1
-kubectl wait --for=condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=120s
+kubectl wait --for=condition=Established crd/loadbalancerconfigurations.gateway.k8s.aws --timeout=120s
 
 echo
 echo "Step 3: Creating GatewayClass..."
