@@ -3,7 +3,7 @@ module "eks" {
   version = "20.11.1"
 
   cluster_name    = var.cluster_name
-  cluster_version = "1.29"
+  cluster_version = "1.32"
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
@@ -17,7 +17,6 @@ module "eks" {
     coredns                = { most_recent = true }
     kube-proxy             = { most_recent = true }
     vpc-cni                = { most_recent = true }
-    aws-ebs-csi-driver     = { most_recent = true }
   }
 
   eks_managed_node_groups = {
@@ -83,6 +82,20 @@ module "eks" {
       self        = true
     }
   }
+}
+
+# Grant the load test EC2 role admin access to the EKS cluster
+resource "aws_eks_access_entry" "load_test" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.load_test.arn
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "load_test" {
+  cluster_name  = module.eks.cluster_name
+  principal_arn = aws_iam_role.load_test.arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope { type = "cluster" }
 }
 
 # ── Cluster Autoscaler ────────────────────────────────────────────────────────

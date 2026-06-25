@@ -5,6 +5,14 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
   }
   backend "s3" {
     bucket = "load-test-project-terraform-state"
@@ -30,7 +38,7 @@ module "vpc" {
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 
   enable_nat_gateway     = true
-  single_nat_gateway     = false   # one NAT per AZ for HA
+  single_nat_gateway     = true   
   enable_dns_hostnames   = true
 
   private_subnet_tags = {

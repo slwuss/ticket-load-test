@@ -35,7 +35,7 @@ install_prereqs() {
       $SUDO apt-get update
       $SUDO apt-get install -y curl unzip wget ca-certificates gnupg lsb-release
       ;;
-    rhel|centos|rocky|almalinux|fedora)
+    rhel|centos|rocky|almalinux|fedora|amzn)
       echo "Installing prerequisites with DNF/YUM..."
       if command -v dnf >/dev/null 2>&1; then
         $SUDO dnf install -y curl unzip wget ca-certificates
@@ -160,6 +160,65 @@ if command -v aws >/dev/null 2>&1; then
   echo
   echo "Updating kubeconfig for cluster ${EKS_CLUSTER_NAME} in region ${EKS_REGION}..."
   aws eks update-kubeconfig --region "$EKS_REGION" --name "$EKS_CLUSTER_NAME"
+
+  echo
+  echo "Checking EKS access for current IAM identity..."
+  CALLER_ARN="$(aws sts get-caller-identity --query Arn --output text)"
+  echo "Current identity: ${CALLER_ARN}"
+
+  EXISTING_ENTRY="$(aws eks list-access-entries \
+    --cluster-name "$EKS_CLUSTER_NAME" \
+    --region "$EKS_REGION" \
+    --query "accessEntries" \
+    --output text 2>/dev/null | tr '\t' '\n' | grep -Fx "$CALLER_ARN" || true)"
+
+  if [[ -n "$EXISTING_ENTRY" ]]; then
+    echo "IAM identity already has EKS access. Checking policy..."
+    EXISTING_POLICY="$(aws eks list-associated-access-policies \
+      --cluster-name "$EKS_CLUSTER_NAME" \
+      --principal-arn "$CALLER_ARN" \
+      --region "$EKS_REGION" \
+      --query "associatedAccessPolicies[].policyArn" \
+      --output text 2>/dev/null | grep -F "AmazonEKSClusterAdminPolicy" || true)"
+
+    if [[ -n "$EXISTING_POLICY" ]]; then
+      echo "EKS cluster admin access already granted. No changes needed."
+    else
+      echo "Access entry exists but missing admin policy. Adding..."
+      aws eks associate-access-policy \
+        --cluster-name "$EKS_CLUSTER_NAME" \
+        --principal-arn "$CALLER_ARN" \
+        --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
+        --access-scope type=cluster \
+        --region "$EKS_REGION"
+      echo "EKS cluster admin policy granted."
+    fi
+  else
+    echo "No EKS access entry found. Creating access entry and granting admin policy..."
+    if ! aws eks create-access-entry \
+      --cluster-name "$EKS_CLUSTER_NAME" \
+      --principal-arn "$CALLER_ARN" \
+      --region "$EKS_REGION" 2>&1; then
+      echo "ERROR: Failed to create EKS access entry. Make sure your IAM user has eks:CreateAccessEntry permission." >&2
+      exit 1
+    fi
+
+    if ! aws eks associate-access-policy \
+      --cluster-name "$EKS_CLUSTER_NAME" \
+      --principal-arn "$CALLER_ARN" \
+      --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
+      --access-scope type=cluster \
+      --region "$EKS_REGION" 2>&1; then
+      echo "ERROR: Failed to associate EKS admin policy. Make sure your IAM user has eks:AssociateAccessPolicy permission." >&2
+      exit 1
+    fi
+
+    echo "EKS access entry created and cluster admin policy granted for ${CALLER_ARN}."
+  fi
+
+  echo
+  echo "Verifying kubectl access..."
+  kubectl get nodes
 else
   echo "AWS CLI was not found in PATH after installation." >&2
   exit 1

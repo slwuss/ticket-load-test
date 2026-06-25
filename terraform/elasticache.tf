@@ -19,7 +19,7 @@ resource "aws_elasticache_replication_group" "ticketing" {
   replication_group_id = "ticketing-redis"
   description          = "Seat lock + session cache"
 
-  node_type          = "cache.r7g.medium"  # 1 vCPU, 6.4GB
+  node_type          = "cache.r6g.large"   # 2 vCPU, 13.07GB
   num_cache_clusters = 1                    # single node, no replicas
   port               = 6379
 

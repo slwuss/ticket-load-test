@@ -18,7 +18,7 @@ resource "aws_security_group" "rds" {
 resource "aws_db_instance" "ticketing" {
   identifier              = "ticketing-postgres"
   engine                  = "postgres"
-  engine_version          = "16.2"
+  engine_version          = "16.9"
   instance_class          = "db.r6g.xlarge"  # 4 vCPU, 32GB — handles ~500 conn
   allocated_storage       = 100
   max_allocated_storage   = 500              # auto-scale storage
