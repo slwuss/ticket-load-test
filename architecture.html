@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Architecture — Ticketing Load Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      padding: 40px 24px;
+      line-height: 1.6;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #f8fafc;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      margin-bottom: 48px;
+      font-size: 0.95rem;
+    }
+
+    /* ── FLOW DIAGRAM ─────────────────────────────────────── */
+    .diagram {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0;
+      margin-bottom: 60px;
+    }
+
+    .box {
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 130px;
+      text-align: center;
+      font-weight: 600;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .box .icon { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+    .box .label { font-size: 0.75rem; font-weight: 400; color: #94a3b8; margin-top: 2px; }
+
+    .box-client   { background: #1e293b; border: 2px solid #334155; }
+    .box-booking  { background: #1e3a5f; border: 2px solid #3b82f6; color: #93c5fd; }
+    .box-redis    { background: #3b1f1f; border: 2px solid #ef4444; color: #fca5a5; }
+    .box-sqs      { background: #2d2010; border: 2px solid #f59e0b; color: #fcd34d; }
+    .box-worker   { background: #1a2e1a; border: 2px solid #22c55e; color: #86efac; }
+    .box-postgres { background: #1e2a3b; border: 2px solid #6366f1; color: #a5b4fc; }
+    .box-dlq      { background: #2a1a1a; border: 2px solid #dc2626; color: #f87171; }
+
+    .arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      gap: 2px;
+    }
+
+    .arrow-line {
+      width: 40px;
+      height: 2px;
+      background: #475569;
+      position: relative;
+    }
+
+    .arrow-line::after {
+      content: '';
+      position: absolute;
+      right: -6px;
+      top: -4px;
+      border: 5px solid transparent;
+      border-left-color: #475569;
+    }
+
+    .arrow-label {
+      font-size: 0.65rem;
+      color: #64748b;
+      white-space: nowrap;
+    }
+
+    /* ── SERVICE CARDS ────────────────────────────────────── */
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 20px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+      margin-bottom: 48px;
+    }
+
+    .card {
+      background: #13192a;
+      border-radius: 14px;
+      padding: 24px;
+      border: 1px solid #1e293b;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-icon {
+      font-size: 1.8rem;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+    }
+
+    .card-title { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+    .card-image { font-size: 0.75rem; color: #64748b; font-family: monospace; }
+
+    .card p { font-size: 0.875rem; color: #94a3b8; margin-bottom: 12px; }
+
+    .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+
+    .tag {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #1e293b;
+      color: #94a3b8;
+      border: 1px solid #334155;
+    }
+
+    .tag.blue   { background: #1e3a5f; color: #93c5fd; border-color: #3b82f6; }
+    .tag.red    { background: #3b1f1f; color: #fca5a5; border-color: #ef4444; }
+    .tag.yellow { background: #2d2010; color: #fcd34d; border-color: #f59e0b; }
+    .tag.green  { background: #1a2e1a; color: #86efac; border-color: #22c55e; }
+    .tag.purple { background: #1e2040; color: #a5b4fc; border-color: #6366f1; }
+
+    .detail-list { list-style: none; padding: 0; }
+    .detail-list li {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      padding: 5px 0;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      gap: 8px;
+    }
+    .detail-list li:last-child { border-bottom: none; }
+    .detail-list li::before { content: "→"; color: #475569; flex-shrink: 0; }
+
+    code {
+      background: #1e293b;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #e2e8f0;
+    }
+
+    /* ── FLOW STEPS ───────────────────────────────────────── */
+    .flows { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; margin-bottom: 48px; }
+
+    .flow-card {
+      background: #13192a;
+      border-radius: 14px;
+      padding: 24px;
+      border: 1px solid #1e293b;
+    }
+
+    .flow-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .flow-steps { list-style: none; padding: 0; counter-reset: step; }
+    .flow-steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-size: 0.82rem;
+      color: #94a3b8;
+    }
+    .flow-steps li::before {
+      content: counter(step);
+      min-width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #1e293b;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* ── ENDPOINTS TABLE ──────────────────────────────────── */
+    .table-wrap { overflow-x: auto; margin-bottom: 48px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    th {
+      background: #1e293b;
+      color: #94a3b8;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #1e293b;
+      color: #cbd5e1;
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .method {
+      font-family: monospace;
+      font-weight: 700;
+      font-size: 0.75rem;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .method.GET    { background: #1a3a1a; color: #86efac; }
+    .method.POST   { background: #1e3a5f; color: #93c5fd; }
+    .method.DELETE { background: #3b1f1f; color: #fca5a5; }
+
+    .status-reserved  { color: #fcd34d; }
+    .status-confirmed { color: #86efac; }
+    .status-cancelled { color: #f87171; }
+
+    /* ── FOOTER NOTE ──────────────────────────────────────── */
+    .note {
+      background: #13192a;
+      border: 1px solid #1e293b;
+      border-left: 4px solid #6366f1;
+      border-radius: 0 10px 10px 0;
+      padding: 16px 20px;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      margin-bottom: 48px;
+    }
+
+    .note strong { color: #e2e8f0; }
+
+    /* ── STEP TRACE ──────────────────────────────────────── */
+    .trace-tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+
+    .trace-tab {
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #64748b;
+      transition: all 0.15s;
+    }
+    .trace-tab.active { background: #1e3a5f; color: #93c5fd; border-color: #3b82f6; }
+
+    .trace-panel { display: none; }
+    .trace-panel.active { display: block; }
+
+    .trace-steps { display: flex; flex-direction: column; gap: 0; }
+
+    .trace-step {
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      gap: 0 16px;
+      position: relative;
+    }
+
+    .trace-step:not(:last-child) .trace-left::after {
+      content: '';
+      position: absolute;
+      left: 19px;
+      top: 44px;
+      bottom: 0;
+      width: 2px;
+      background: #1e293b;
+    }
+
+    .trace-left {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      padding-top: 12px;
+    }
+
+    .trace-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      z-index: 1;
+      border: 2px solid #334155;
+      background: #0f1117;
+      color: #94a3b8;
+    }
+
+    .trace-right { padding: 12px 0 28px 0; }
+
+    .trace-service {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 3px 10px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+    }
+
+    .trace-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 8px;
+    }
+
+    .trace-desc {
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-bottom: 10px;
+    }
+
+    .trace-code {
+      background: #0d1117;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .trace-code-header {
+      background: #13192a;
+      padding: 6px 12px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .outcome-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .outcome {
+      font-size: 0.75rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .outcome.ok  { background: #1a2e1a; color: #86efac; border: 1px solid #22c55e; }
+    .outcome.err { background: #3b1f1f; color: #fca5a5; border: 1px solid #ef4444; }
+
+    /* ── MESSAGE EXAMPLES ────────────────────────────────── */
+    .msg-section { margin-bottom: 48px; }
+
+    .msg-tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+
+    .msg-tab {
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #64748b;
+      transition: all 0.15s;
+    }
+    .msg-tab.active-reserve { background: #1e3a5f; color: #93c5fd; border-color: #3b82f6; }
+    .msg-tab.active-confirm { background: #1a2e1a; color: #86efac; border-color: #22c55e; }
+    .msg-tab.active-cancel  { background: #3b1f1f; color: #fca5a5; border-color: #ef4444; }
+
+    .msg-panel { display: none; }
+    .msg-panel.active { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+
+    .msg-block {
+      background: #0d1117;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .msg-block-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: #13192a;
+      border-bottom: 1px solid #1e293b;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .msg-block-header .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      font-family: "Fira Code", "Cascadia Code", Consolas, monospace;
+      font-size: 0.75rem;
+      line-height: 1.7;
+      color: #e2e8f0;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .k  { color: #93c5fd; }  /* key / field name */
+    .s  { color: #86efac; }  /* string value */
+    .n  { color: #fcd34d; }  /* number / uuid */
+    .c  { color: #94a3b8; }  /* comment */
+    .p  { color: #f87171; }  /* punctuation */
+    .kw { color: #c084fc; }  /* SQL keyword */
+    .rd { color: #fca5a5; }  /* redis command */
+  </style>
+</head>
+<body>
+
+  <h1>🎟️ Ticketing System Architecture</h1>
+  <p class="subtitle">Local Docker stack — mirrors production topology without EKS / AWS costs</p>
+
+  <!-- ── FLOW DIAGRAM ── -->
+  <div class="diagram">
+    <div class="box box-client">
+      <span class="icon">🖥️</span>
+      Client
+      <div class="label">curl / k6</div>
+    </div>
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">HTTP :8080</div>
+    </div>
+    <div class="box box-booking">
+      <span class="icon">📦</span>
+      Booking<br>Service
+      <div class="label">API Gateway</div>
+    </div>
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">SET NX</div>
+    </div>
+    <div class="box box-redis">
+      <span class="icon">⚡</span>
+      Redis
+      <div class="label">Seat Locks</div>
+    </div>
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">Publish</div>
+    </div>
+    <div class="box box-sqs">
+      <span class="icon">📨</span>
+      SQS FIFO<br>Queue
+      <div class="label">LocalStack</div>
+    </div>
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">Poll</div>
+    </div>
+    <div class="box box-worker">
+      <span class="icon">⚙️</span>
+      Worker<br>Service
+      <div class="label">Consumer</div>
+    </div>
+    <div class="arrow">
+      <div class="arrow-line"></div>
+      <div class="arrow-label">SQL</div>
+    </div>
+    <div class="box box-postgres">
+      <span class="icon">🗄️</span>
+      PostgreSQL
+      <div class="label">Persistence</div>
+    </div>
+  </div>
+
+  <!-- ── SERVICE CARDS ── -->
+  <div class="section-title">Services</div>
+  <div class="cards">
+
+    <!-- Booking Service -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#1e3a5f">📦</div>
+        <div>
+          <div class="card-title">Booking Service</div>
+          <div class="card-image">docker-booking-service-1 · :8080</div>
+        </div>
+      </div>
+      <p>The public-facing HTTP API. Clients talk only to this service. It never writes to the database directly — it only locks seats in Redis and publishes messages to SQS.</p>
+      <div class="tag-row">
+        <span class="tag blue">Go + Gin</span>
+        <span class="tag blue">Port 8080</span>
+        <span class="tag blue">REST API</span>
+      </div>
+      <ul class="detail-list">
+        <li>Receives <code>reserve / confirm / cancel</code> requests from clients</li>
+        <li>Acquires a Redis lock (<code>SET NX</code> with 10-min TTL) to prevent double-booking</li>
+        <li>Publishes a <code>BookingMessage</code> to SQS FIFO queue</li>
+        <li>Returns <code>booking_id</code> immediately — does NOT wait for DB write</li>
+        <li>Depends on Redis being healthy before starting</li>
+      </ul>
+    </div>
+
+    <!-- Redis -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#3b1f1f">⚡</div>
+        <div>
+          <div class="card-title">Redis</div>
+          <div class="card-image">docker-redis-1 · :6379</div>
+        </div>
+      </div>
+      <p>Acts as a distributed lock manager. Prevents two users from booking the same seat at the same time, even under heavy concurrent load.</p>
+      <div class="tag-row">
+        <span class="tag red">redis:7-alpine</span>
+        <span class="tag red">Port 6379</span>
+        <span class="tag red">In-memory</span>
+      </div>
+      <ul class="detail-list">
+        <li>Key format: <code>seat:lock:{eventID}:{seatID}</code></li>
+        <li><code>SET NX</code> — only succeeds if the key does not exist (atomic)</li>
+        <li>TTL of <strong>10 minutes</strong> — lock auto-expires if user never confirms</li>
+        <li>Release uses a Lua script to ensure only the lock owner can delete it</li>
+        <li>No persistence (<code>--save ""</code>) — locks are ephemeral by design</li>
+      </ul>
+    </div>
+
+    <!-- SQS / LocalStack -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#2d2010">📨</div>
+        <div>
+          <div class="card-title">SQS FIFO Queue (LocalStack)</div>
+          <div class="card-image">docker-localstack-1 · :4566</div>
+        </div>
+      </div>
+      <p>Simulates AWS SQS locally. Acts as a buffer between the Booking Service and Worker. Decouples the API from the database so the API stays fast even if the DB is slow.</p>
+      <div class="tag-row">
+        <span class="tag yellow">LocalStack 3</span>
+        <span class="tag yellow">FIFO Queue</span>
+        <span class="tag yellow">Port 4566</span>
+      </div>
+      <ul class="detail-list">
+        <li>Two queues: <code>booking-queue.fifo</code> (main) and <code>booking-dlq.fifo</code> (dead letter)</li>
+        <li>FIFO ensures messages for the same event are processed in order (<code>MessageGroupId = eventID</code>)</li>
+        <li>Messages that fail processing reappear after 30-second visibility timeout → auto-retry</li>
+        <li>Created by the <code>init-sqs</code> one-shot container on first start</li>
+      </ul>
+    </div>
+
+    <!-- Worker Service -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#1a2e1a">⚙️</div>
+        <div>
+          <div class="card-title">Worker Service</div>
+          <div class="card-image">docker-worker-service-1</div>
+        </div>
+      </div>
+      <p>Background consumer that reads messages from SQS and writes the final state to PostgreSQL. Runs 10 concurrent goroutines to maximize throughput.</p>
+      <div class="tag-row">
+        <span class="tag green">Go</span>
+        <span class="tag green">10 goroutines</span>
+        <span class="tag green">Long-poll 20s</span>
+      </div>
+      <ul class="detail-list">
+        <li>Polls SQS with long-polling (20s wait) — efficient, not busy-looping</li>
+        <li>Handles 3 actions: <code>reserve</code> → insert row, <code>confirm</code> → update status, <code>cancel</code> → update + release Redis lock</li>
+        <li>On DB error → does NOT delete SQS message → message reappears for retry</li>
+        <li>On success → deletes the SQS message to prevent duplicate processing</li>
+        <li>Depends on Postgres + Redis being healthy before starting</li>
+      </ul>
+    </div>
+
+    <!-- PostgreSQL -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#1e2040">🗄️</div>
+        <div>
+          <div class="card-title">PostgreSQL</div>
+          <div class="card-image">docker-postgres-1 · :5432</div>
+        </div>
+      </div>
+      <p>The source of truth for all booking records. Only the Worker Service writes to it. Data persists across container restarts via a named Docker volume.</p>
+      <div class="tag-row">
+        <span class="tag purple">postgres:16-alpine</span>
+        <span class="tag purple">Port 5432</span>
+        <span class="tag purple">Persistent volume</span>
+      </div>
+      <ul class="detail-list">
+        <li>Database: <code>ticketing</code> · User: <code>ticketing</code> · Password: <code>secret</code></li>
+        <li>Single table: <code>bookings</code> with unique constraint on <code>(event_id, seat_id)</code></li>
+        <li>Status values: <code>reserved</code> → <code>confirmed</code> or <code>cancelled</code></li>
+        <li>Volume <code>pgdata</code> persists data even if the container is removed</li>
+      </ul>
+    </div>
+
+    <!-- init-sqs -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:#2d2010">🚀</div>
+        <div>
+          <div class="card-title">init-sqs</div>
+          <div class="card-image">amazon/aws-cli · one-shot</div>
+        </div>
+      </div>
+      <p>A one-time setup container that creates the two SQS FIFO queues in LocalStack. It runs once on startup and exits — it is not a long-running service.</p>
+      <div class="tag-row">
+        <span class="tag yellow">One-shot</span>
+        <span class="tag yellow">Depends on LocalStack</span>
+      </div>
+      <ul class="detail-list">
+        <li>Waits for LocalStack to be healthy before running</li>
+        <li>Creates <code>booking-dlq.fifo</code> first, then <code>booking-queue.fifo</code></li>
+        <li>Both queues use <code>ContentBasedDeduplication=true</code></li>
+        <li>Other services wait for this container to complete before starting</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <!-- ── API FLOW STEPS ── -->
+  <div class="section-title">Request Flows</div>
+  <div class="flows">
+
+    <div class="flow-card">
+      <div class="flow-title">🔒 Reserve a Seat</div>
+      <ol class="flow-steps">
+        <li>Client sends <code>POST /api/v1/events/{event_id}/reserve</code> with <code>seat_id</code> and <code>user_id</code></li>
+        <li>Booking Service generates a new UUID as <code>booking_id</code></li>
+        <li>Tries <code>SET NX seat:lock:{eventID}:{seatID}</code> in Redis with 10-min TTL</li>
+        <li>If key already exists → return <code>409 Conflict</code> — seat is taken</li>
+        <li>Publishes <code>action: "reserve"</code> message to SQS FIFO queue</li>
+        <li>Returns <code>202 Accepted</code> with <code>booking_id</code> immediately</li>
+        <li>Worker picks up the SQS message and inserts a row in Postgres with <code>status = reserved</code></li>
+      </ol>
+    </div>
+
+    <div class="flow-card">
+      <div class="flow-title">✅ Confirm a Booking</div>
+      <ol class="flow-steps">
+        <li>Client sends <code>POST /api/v1/bookings/{booking_id}/confirm</code> with event + seat + user</li>
+        <li>Booking Service publishes <code>action: "confirm"</code> to SQS</li>
+        <li>Returns <code>202 Accepted</code> with <code>status: "confirming"</code></li>
+        <li>Worker receives message and runs <code>UPDATE bookings SET status = 'confirmed'</code></li>
+        <li>Only updates if current status is <code>reserved</code> — prevents double-confirm</li>
+        <li>Redis lock remains until TTL expires (seat is now permanently booked)</li>
+      </ol>
+    </div>
+
+    <div class="flow-card">
+      <div class="flow-title">❌ Cancel a Booking</div>
+      <ol class="flow-steps">
+        <li>Client sends <code>DELETE /api/v1/bookings/{booking_id}?event_id=&seat_id=</code></li>
+        <li>Booking Service immediately releases the Redis lock (<code>DEL seat:lock:...</code>)</li>
+        <li>Publishes <code>action: "cancel"</code> to SQS</li>
+        <li>Returns <code>200 OK</code> — seat is instantly available for others to book</li>
+        <li>Worker receives message and runs <code>UPDATE bookings SET status = 'cancelled'</code></li>
+        <li>Worker also releases Redis lock again (idempotent — safe if already released)</li>
+      </ol>
+    </div>
+
+    <div class="flow-card">
+      <div class="flow-title">🔁 Retry / Error Handling</div>
+      <ol class="flow-steps">
+        <li>Worker fails to process a message (e.g., DB error)</li>
+        <li>Worker does NOT call <code>DeleteMessage</code> on SQS</li>
+        <li>SQS visibility timeout expires after 30 seconds</li>
+        <li>Message becomes visible again and another goroutine picks it up</li>
+        <li>This continues automatically until the message is processed successfully</li>
+        <li>Failed messages eventually move to <code>booking-dlq.fifo</code> dead-letter queue</li>
+      </ol>
+    </div>
+
+  </div>
+
+  <!-- ── ENDPOINTS TABLE ── -->
+  <div class="section-title">API Endpoints</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Path</th>
+          <th>What it does</th>
+          <th>Returns</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="method GET">GET</span></td>
+          <td><code>/api/v1/events</code></td>
+          <td>List available events (evt-001, evt-002)</td>
+          <td>200 · event list</td>
+        </tr>
+        <tr>
+          <td><span class="method POST">POST</span></td>
+          <td><code>/api/v1/events/:event_id/reserve</code></td>
+          <td>Lock a seat in Redis + publish to SQS</td>
+          <td>202 · <code>booking_id</code></td>
+        </tr>
+        <tr>
+          <td><span class="method POST">POST</span></td>
+          <td><code>/api/v1/bookings/:booking_id/confirm</code></td>
+          <td>Publish confirm action to SQS → Worker sets status to confirmed</td>
+          <td>202 · confirming</td>
+        </tr>
+        <tr>
+          <td><span class="method DELETE">DELETE</span></td>
+          <td><code>/api/v1/bookings/:booking_id?event_id=&seat_id=</code></td>
+          <td>Release Redis lock immediately + publish cancel to SQS</td>
+          <td>200 · cancelled</td>
+        </tr>
+        <tr>
+          <td><span class="method GET">GET</span></td>
+          <td><code>/healthz</code></td>
+          <td>Liveness check — always 200 if process is alive</td>
+          <td>200</td>
+        </tr>
+        <tr>
+          <td><span class="method GET">GET</span></td>
+          <td><code>/readyz</code></td>
+          <td>Readiness check — pings Redis, returns 503 if unreachable</td>
+          <td>200 / 503</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── STATUS FLOW ── -->
+  <div class="section-title">Booking Status Lifecycle</div>
+  <div style="background:#13192a;border:1px solid #1e293b;border-radius:14px;padding:28px;margin-bottom:48px;text-align:center;">
+    <div style="display:inline-flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:center;">
+      <div style="background:#1e293b;border:2px solid #475569;border-radius:10px;padding:14px 24px;">
+        <div style="font-size:1.1rem;font-weight:700;color:#94a3b8;">START</div>
+        <div style="font-size:0.75rem;color:#64748b;">seat available</div>
+      </div>
+      <div style="color:#475569;font-size:1.5rem;">→</div>
+      <div style="background:#2d2010;border:2px solid #f59e0b;border-radius:10px;padding:14px 24px;">
+        <div style="font-size:1.1rem;font-weight:700;" class="status-reserved">reserved</div>
+        <div style="font-size:0.75rem;color:#64748b;">Redis lock held · 10 min</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;align-items:flex-start;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="color:#475569;font-size:1.2rem;">→</div>
+          <div style="background:#1a2e1a;border:2px solid #22c55e;border-radius:10px;padding:14px 24px;">
+            <div style="font-size:1.1rem;font-weight:700;" class="status-confirmed">confirmed</div>
+            <div style="font-size:0.75rem;color:#64748b;">permanent booking</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="color:#475569;font-size:1.2rem;">→</div>
+          <div style="background:#3b1f1f;border:2px solid #ef4444;border-radius:10px;padding:14px 24px;">
+            <div style="font-size:1.1rem;font-weight:700;" class="status-cancelled">cancelled</div>
+            <div style="font-size:0.75rem;color:#64748b;">lock released · seat free again</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STEP TRACE ── -->
+  <div class="section-title">What Happens Inside — Step by Step</div>
+  <p style="font-size:0.85rem;color:#64748b;margin-bottom:20px;">Exact commands and values sent between services after the API receives a request.</p>
+
+  <div style="margin-bottom:48px;">
+    <div class="trace-tabs">
+      <button class="trace-tab active" onclick="showTrace('reserve-trace', this)">🔒 After POST /reserve</button>
+      <button class="trace-tab" onclick="showTrace('confirm-trace', this)">✅ After POST /confirm</button>
+      <button class="trace-tab" onclick="showTrace('cancel-trace', this)">❌ After DELETE /cancel</button>
+    </div>
+
+    <!-- RESERVE TRACE -->
+    <div id="reserve-trace" class="trace-panel active">
+      <div class="trace-steps">
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#3b82f6;color:#93c5fd">1</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e3a5f;color:#93c5fd">📦 Client → Booking Service</div>
+            <div class="trace-title">HTTP POST arrives</div>
+            <div class="trace-desc">Client sends seat and user to the API endpoint.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">HTTP Request</div>
+              <pre><span class="kw">POST</span> /api/v1/events/<span class="n">evt-001</span>/reserve
+<span class="c">Content-Type: application/json</span>
+
+<span class="p">{</span>
+  <span class="k">"seat_id"</span><span class="p">:</span> <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span> <span class="s">"user-alice"</span>
+<span class="p">}</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#a78bfa;color:#a78bfa">2</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#2d1f4a;color:#a78bfa">⚙️ Booking Service — Internal</div>
+            <div class="trace-title">Generate booking_id</div>
+            <div class="trace-desc">Service creates a new UUID. This ID links every hop together — Redis, SQS, and Postgres all use it.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">Go Code (uuid.New)</div>
+              <pre><span class="c">// uuid.New().String()</span>
+booking_id = <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#ef4444;color:#fca5a5">3</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#3b1f1f;color:#fca5a5">⚡ Booking Service → Redis</div>
+            <div class="trace-title">Acquire seat lock (SET NX)</div>
+            <div class="trace-desc">Atomically locks the seat. Only one booking can hold this key at a time.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">Redis Command Sent</div>
+              <pre><span class="rd">SET</span>  seat:lock:<span class="n">evt-001</span>:<span class="n">A3</span>
+     <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span>
+     NX        <span class="c">← only set if key does NOT exist</span>
+     EX <span class="n">600</span>   <span class="c">← auto-expire in 10 minutes</span>
+
+<span class="c">key format → seat:lock:{event_id}:{seat_id}</span>
+<span class="c">value      → booking_id (so only owner can unlock)</span></pre>
+            </div>
+            <div class="outcome-row">
+              <span class="outcome ok">OK → lock acquired, continue to step 4</span>
+              <span class="outcome err">nil → seat taken → return 409, stop here</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#f59e0b;color:#fcd34d">4</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#2d2010;color:#fcd34d">📨 Booking Service → SQS</div>
+            <div class="trace-title">Publish message to queue</div>
+            <div class="trace-desc">Sends a JSON message to the FIFO queue. The Worker will pick this up asynchronously.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">SQS SendMessage payload</div>
+              <pre><span class="c">QueueUrl:               booking-queue.fifo</span>
+<span class="c">MessageGroupId:         "evt-001"   ← orders messages per event</span>
+<span class="c">MessageDeduplicationId: new UUID    ← prevents SQS duplicates</span>
+
+<span class="c">MessageBody:</span>
+<span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"event_id"</span><span class="p">:</span>   <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>    <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>    <span class="s">"user-alice"</span><span class="p">,</span>
+  <span class="k">"action"</span><span class="p">:</span>     <span class="s">"reserve"</span>
+<span class="p">}</span></pre>
+            </div>
+            <div class="outcome-row">
+              <span class="outcome ok">OK → continue to step 5</span>
+              <span class="outcome err">Error → release Redis lock, return 500</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#3b82f6;color:#93c5fd">5</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e3a5f;color:#93c5fd">📦 Booking Service → Client</div>
+            <div class="trace-title">Return 202 immediately</div>
+            <div class="trace-desc">Does NOT wait for the DB write. Client gets the booking_id right away to use for confirm/cancel.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">HTTP Response</div>
+              <pre><span class="c">HTTP/1.1 202 Accepted</span>
+<span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>     <span class="s">"reserved"</span><span class="p">,</span>
+  <span class="k">"message"</span><span class="p">:</span>    <span class="s">"seat held for 10 minutes"</span>
+<span class="p">}</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#22c55e;color:#86efac">6</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1a2e1a;color:#86efac">⚙️ SQS → Worker Service</div>
+            <div class="trace-title">Worker polls and receives the message</div>
+            <div class="trace-desc">10 goroutines are long-polling SQS. One picks up the message. It is hidden from others for 30s (VisibilityTimeout).</div>
+            <div class="trace-code">
+              <div class="trace-code-header">SQS ReceiveMessage call</div>
+              <pre><span class="rd">ReceiveMessage</span><span class="p">(</span>
+  QueueUrl:            <span class="s">"...booking-queue.fifo"</span><span class="p">,</span>
+  MaxNumberOfMessages: <span class="n">10</span><span class="p">,</span>
+  WaitTimeSeconds:     <span class="n">20</span><span class="p">,</span>  <span class="c">← long-poll, not busy-loop</span>
+  VisibilityTimeout:   <span class="n">30</span>   <span class="c">← hidden from other workers</span>
+<span class="p">)</span>
+
+<span class="c">Worker sees action = "reserve" → calls UpsertReserved</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#6366f1;color:#a5b4fc">7</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e2040;color:#a5b4fc">🗄️ Worker Service → PostgreSQL</div>
+            <div class="trace-title">Insert row into bookings table</div>
+            <div class="trace-desc">Worker writes the booking to the DB. Uses ON CONFLICT to safely overwrite cancelled rows for the same seat.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">SQL Executed</div>
+              <pre><span class="kw">INSERT INTO</span> bookings (id, event_id, seat_id, user_id, status)
+<span class="kw">VALUES</span> (
+  <span class="s">'98e15093-3999-499d-a38a-47cc5d5e5763'</span><span class="p">,</span>
+  <span class="s">'evt-001'</span><span class="p">,</span> <span class="s">'A3'</span><span class="p">,</span> <span class="s">'user-alice'</span><span class="p">,</span> <span class="s">'reserved'</span>
+)
+<span class="kw">ON CONFLICT</span> (event_id, seat_id) <span class="kw">DO UPDATE SET</span>
+  id         = EXCLUDED.id<span class="p">,</span>
+  user_id    = EXCLUDED.user_id<span class="p">,</span>
+  status     = <span class="s">'reserved'</span><span class="p">,</span>
+  updated_at = <span class="kw">NOW</span>()<span class="p">;</span>
+
+<span class="c">-- Row in DB after this runs:</span>
+<span class="c">-- id         │ 98e15093-3999-499d-a38a-47cc5d5e5763</span>
+<span class="c">-- event_id   │ evt-001</span>
+<span class="c">-- seat_id    │ A3</span>
+<span class="c">-- user_id    │ user-alice</span>
+<span class="c">-- status     │ reserved</span>
+<span class="c">-- created_at │ 2026-06-19 07:46:45+00</span></pre>
+            </div>
+            <div class="outcome-row">
+              <span class="outcome ok">OK → Worker calls DeleteMessage on SQS → done</span>
+              <span class="outcome err">DB Error → skip delete → message retries after 30s</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /reserve-trace -->
+
+    <!-- CONFIRM TRACE -->
+    <div id="confirm-trace" class="trace-panel">
+      <div class="trace-steps">
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#3b82f6;color:#93c5fd">1</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e3a5f;color:#93c5fd">📦 Client → Booking Service</div>
+            <div class="trace-title">HTTP POST arrives</div>
+            <div class="trace-desc">Client uses the booking_id received from the reserve step.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">HTTP Request</div>
+              <pre><span class="kw">POST</span> /api/v1/bookings/<span class="n">98e15093-3999-499d-a38a-47cc5d5e5763</span>/confirm
+<span class="c">Content-Type: application/json</span>
+
+<span class="p">{</span>
+  <span class="k">"event_id"</span><span class="p">:</span> <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>  <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>  <span class="s">"user-alice"</span>
+<span class="p">}</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#f59e0b;color:#fcd34d">2</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#2d2010;color:#fcd34d">📨 Booking Service → SQS</div>
+            <div class="trace-title">Publish confirm message</div>
+            <div class="trace-desc">No Redis interaction here — the lock is kept alive. Only the DB update is needed.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">SQS MessageBody</div>
+              <pre><span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"event_id"</span><span class="p">:</span>   <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>    <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>    <span class="s">"user-alice"</span><span class="p">,</span>
+  <span class="k">"action"</span><span class="p">:</span>     <span class="s">"confirm"</span>   <span class="c">← key field</span>
+<span class="p">}</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#3b82f6;color:#93c5fd">3</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e3a5f;color:#93c5fd">📦 Booking Service → Client</div>
+            <div class="trace-title">Return 202 immediately</div>
+            <div class="trace-code">
+              <div class="trace-code-header">HTTP Response</div>
+              <pre><span class="c">HTTP/1.1 202 Accepted</span>
+<span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>     <span class="s">"confirming"</span>   <span class="c">← not "confirmed" yet</span>
+<span class="p">}</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#6366f1;color:#a5b4fc">4</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e2040;color:#a5b4fc">🗄️ Worker Service → PostgreSQL</div>
+            <div class="trace-title">Update row to confirmed</div>
+            <div class="trace-desc">The AND status = 'reserved' guard prevents double-confirm. If 0 rows updated → logs error but message is still deleted.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">SQL Executed</div>
+              <pre><span class="kw">UPDATE</span> bookings
+<span class="kw">SET</span>
+  status     = <span class="s">'confirmed'</span><span class="p">,</span>
+  updated_at = <span class="kw">NOW</span>()
+<span class="kw">WHERE</span>
+  id     = <span class="s">'98e15093-3999-499d-a38a-47cc5d5e5763'</span>
+  <span class="kw">AND</span> status = <span class="s">'reserved'</span><span class="p">;</span>  <span class="c">← guard: must be reserved</span>
+
+<span class="c">-- Before: status = 'reserved'</span>
+<span class="c">-- After:  status = 'confirmed'  ← permanent</span>
+<span class="c">--         updated_at = NOW()</span></pre>
+            </div>
+            <div class="outcome-row">
+              <span class="outcome ok">rows_affected = 1 → success, delete SQS message</span>
+              <span class="outcome err">rows_affected = 0 → already confirmed or not found</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /confirm-trace -->
+
+    <!-- CANCEL TRACE -->
+    <div id="cancel-trace" class="trace-panel">
+      <div class="trace-steps">
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#3b82f6;color:#93c5fd">1</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e3a5f;color:#93c5fd">📦 Client → Booking Service</div>
+            <div class="trace-title">HTTP DELETE arrives</div>
+            <div class="trace-desc">event_id and seat_id passed as query params (needed to build the Redis key).</div>
+            <div class="trace-code">
+              <div class="trace-code-header">HTTP Request</div>
+              <pre><span class="kw">DELETE</span> /api/v1/bookings/<span class="n">98e15093-3999-499d-a38a-47cc5d5e5763</span>
+       ?event_id=<span class="n">evt-001</span>&amp;seat_id=<span class="n">A3</span>
+
+<span class="c">No request body needed</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#ef4444;color:#fca5a5">2</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#3b1f1f;color:#fca5a5">⚡ Booking Service → Redis</div>
+            <div class="trace-title">Release lock immediately (Lua script)</div>
+            <div class="trace-desc">Done synchronously before responding. Seat is free the moment this succeeds — another user can reserve it right away.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">Redis Lua Script (atomic)</div>
+              <pre><span class="rd">EVAL</span> <span class="s">"
+  if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('DEL', KEYS[1])
+  end
+  return 0
+"</span>
+  KEYS[1] = <span class="n">seat:lock:evt-001:A3</span>
+  ARGV[1] = <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span>
+
+<span class="c">Gets current value → only deletes if it matches</span>
+<span class="c">booking_id. Prevents cancelling someone else's lock.</span></pre>
+            </div>
+            <div class="outcome-row">
+              <span class="outcome ok">Returns 1 → lock deleted, seat free</span>
+              <span class="outcome ok">Returns 0 → lock already expired (still OK)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#f59e0b;color:#fcd34d">3</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#2d2010;color:#fcd34d">📨 Booking Service → SQS</div>
+            <div class="trace-title">Publish cancel message</div>
+            <div class="trace-code">
+              <div class="trace-code-header">SQS MessageBody</div>
+              <pre><span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"event_id"</span><span class="p">:</span>   <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>    <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>    <span class="s">""</span><span class="p">,</span>          <span class="c">← not needed for cancel</span>
+  <span class="k">"action"</span><span class="p">:</span>     <span class="s">"cancel"</span>
+<span class="p">}</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#3b82f6;color:#93c5fd">4</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e3a5f;color:#93c5fd">📦 Booking Service → Client</div>
+            <div class="trace-title">Return 200 — seat already free</div>
+            <div class="trace-code">
+              <div class="trace-code-header">HTTP Response</div>
+              <pre><span class="c">HTTP/1.1 200 OK</span>
+<span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>     <span class="s">"cancelled"</span>
+<span class="p">}</span>
+
+<span class="c">Redis lock already deleted in step 2.</span>
+<span class="c">Anyone can reserve A3 right now.</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="trace-step">
+          <div class="trace-left"><div class="trace-num" style="border-color:#6366f1;color:#a5b4fc">5</div></div>
+          <div class="trace-right">
+            <div class="trace-service" style="background:#1e2040;color:#a5b4fc">🗄️ Worker Service → PostgreSQL + Redis</div>
+            <div class="trace-title">Update DB row + release lock (idempotent)</div>
+            <div class="trace-desc">Worker updates the DB row and also runs the Lua DEL again — safe even if the lock is already gone.</div>
+            <div class="trace-code">
+              <div class="trace-code-header">SQL Executed</div>
+              <pre><span class="kw">UPDATE</span> bookings
+<span class="kw">SET</span>
+  status     = <span class="s">'cancelled'</span><span class="p">,</span>
+  updated_at = <span class="kw">NOW</span>()
+<span class="kw">WHERE</span> id = <span class="s">'98e15093-3999-499d-a38a-47cc5d5e5763'</span><span class="p">;</span>
+
+<span class="c">-- Then runs the same Lua DEL on Redis again</span>
+<span class="c">-- (returns 0 if already gone — no error)</span>
+
+<span class="c">-- Before: status = 'reserved'</span>
+<span class="c">-- After:  status = 'cancelled'</span></pre>
+            </div>
+            <div class="outcome-row">
+              <span class="outcome ok">OK → delete SQS message → flow complete</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /cancel-trace -->
+  </div>
+
+  <!-- ── MESSAGE EXAMPLES ── -->
+  <div class="section-title">Message &amp; Value Examples</div>
+  <p style="font-size:0.85rem;color:#64748b;margin-bottom:20px;">Exactly what data flows through each service for each action.</p>
+
+  <div class="msg-section">
+    <div class="msg-tabs">
+      <button class="msg-tab active-reserve" onclick="showPanel('reserve', this)">🔒 Reserve</button>
+      <button class="msg-tab" onclick="showPanel('confirm', this)">✅ Confirm</button>
+      <button class="msg-tab" onclick="showPanel('cancel', this)">❌ Cancel</button>
+    </div>
+
+    <!-- RESERVE -->
+    <div id="panel-reserve" class="msg-panel active">
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#3b82f6"></div>
+          1 · HTTP Request → Booking Service
+        </div>
+        <pre><span class="kw">POST</span> /api/v1/events/<span class="n">evt-001</span>/reserve
+<span class="c">Content-Type: application/json</span>
+
+<span class="p">{</span>
+  <span class="k">"seat_id"</span><span class="p">:</span> <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span> <span class="s">"user-alice"</span>
+<span class="p">}</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#ef4444"></div>
+          2 · Redis — Seat Lock (SET NX)
+        </div>
+        <pre><span class="c"># Command sent by Booking Service</span>
+<span class="rd">SET</span> seat:lock:<span class="n">evt-001</span>:<span class="n">A3</span>
+    <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span>
+    NX EX <span class="n">600</span>
+
+<span class="c"># Key    → seat:lock:{event_id}:{seat_id}</span>
+<span class="c"># Value  → booking_id (UUID)</span>
+<span class="c"># NX     → only set if key does NOT exist</span>
+<span class="c"># EX 600 → expires in 10 minutes</span>
+
+<span class="c"># Success → returns OK  (seat locked)</span>
+<span class="c"># Fail    → returns nil (seat taken → 409)</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#f59e0b"></div>
+          3 · SQS Message Body
+        </div>
+        <pre><span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"event_id"</span><span class="p">:</span>   <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>    <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>    <span class="s">"user-alice"</span><span class="p">,</span>
+  <span class="k">"action"</span><span class="p">:</span>     <span class="s">"reserve"</span>
+<span class="p">}</span>
+
+<span class="c"># Queue: booking-queue.fifo</span>
+<span class="c"># MessageGroupId: "evt-001"  (per-event ordering)</span>
+<span class="c"># VisibilityTimeout: 30s     (retry window)</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#3b82f6"></div>
+          4 · HTTP Response → Client
+        </div>
+        <pre><span class="c">HTTP/1.1 202 Accepted</span>
+
+<span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>     <span class="s">"reserved"</span><span class="p">,</span>
+  <span class="k">"message"</span><span class="p">:</span>    <span class="s">"seat held for 10 minutes</span>
+<span class="s">               — call /confirm to complete"</span>
+<span class="p">}</span>
+
+<span class="c"># Returned BEFORE the DB write happens</span>
+<span class="c"># Save booking_id to call confirm/cancel later</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#6366f1"></div>
+          5 · PostgreSQL — Row Inserted by Worker
+        </div>
+        <pre><span class="kw">INSERT INTO</span> bookings
+  (id, event_id, seat_id, user_id, status)
+<span class="kw">VALUES</span>
+  (<span class="s">'98e15093-3999-499d-a38a-47cc5d5e5763'</span><span class="p">,</span>
+   <span class="s">'evt-001'</span><span class="p">,</span> <span class="s">'A3'</span><span class="p">,</span> <span class="s">'user-alice'</span><span class="p">,</span> <span class="s">'reserved'</span>)
+<span class="kw">ON CONFLICT</span> (event_id, seat_id) <span class="kw">DO UPDATE SET</span>
+  id         = EXCLUDED.id<span class="p">,</span>
+  user_id    = EXCLUDED.user_id<span class="p">,</span>
+  status     = <span class="s">'reserved'</span><span class="p">,</span>
+  updated_at = <span class="kw">NOW</span>()<span class="p">;</span>
+
+<span class="c">-- Resulting row:</span>
+<span class="c">-- id         | 98e15093-...          </span>
+<span class="c">-- event_id   | evt-001               </span>
+<span class="c">-- seat_id    | A3                    </span>
+<span class="c">-- user_id    | user-alice            </span>
+<span class="c">-- status     | reserved              </span>
+<span class="c">-- created_at | 2026-06-19 07:46:45+00</span></pre>
+      </div>
+
+    </div><!-- /panel-reserve -->
+
+    <!-- CONFIRM -->
+    <div id="panel-confirm" class="msg-panel">
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#3b82f6"></div>
+          1 · HTTP Request → Booking Service
+        </div>
+        <pre><span class="kw">POST</span> /api/v1/bookings/<span class="n">98e15093-3999-499d-a38a-47cc5d5e5763</span>/confirm
+<span class="c">Content-Type: application/json</span>
+
+<span class="p">{</span>
+  <span class="k">"event_id"</span><span class="p">:</span> <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>  <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>  <span class="s">"user-alice"</span>
+<span class="p">}</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#f59e0b"></div>
+          2 · SQS Message Body
+        </div>
+        <pre><span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"event_id"</span><span class="p">:</span>   <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>    <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>    <span class="s">"user-alice"</span><span class="p">,</span>
+  <span class="k">"action"</span><span class="p">:</span>     <span class="s">"confirm"</span>
+<span class="p">}</span>
+
+<span class="c"># No Redis interaction at this step</span>
+<span class="c"># Redis lock stays until it expires (10 min TTL)</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#3b82f6"></div>
+          3 · HTTP Response → Client
+        </div>
+        <pre><span class="c">HTTP/1.1 202 Accepted</span>
+
+<span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>     <span class="s">"confirming"</span>
+<span class="p">}</span>
+
+<span class="c"># "confirming" = SQS message sent</span>
+<span class="c"># DB update happens async via Worker</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#6366f1"></div>
+          4 · PostgreSQL — Row Updated by Worker
+        </div>
+        <pre><span class="kw">UPDATE</span> bookings
+<span class="kw">SET</span>
+  status     = <span class="s">'confirmed'</span><span class="p">,</span>
+  updated_at = <span class="kw">NOW</span>()
+<span class="kw">WHERE</span>
+  id     = <span class="s">'98e15093-3999-499d-a38a-47cc5d5e5763'</span>
+  <span class="kw">AND</span> status = <span class="s">'reserved'</span><span class="p">;</span>  <span class="c">-- guard</span>
+
+<span class="c">-- Resulting row:</span>
+<span class="c">-- id         | 98e15093-...          </span>
+<span class="c">-- status     | confirmed  ← changed  </span>
+<span class="c">-- updated_at | 2026-06-19 07:46:52+00</span>
+
+<span class="c">-- If rows_affected = 0 → already confirmed</span>
+<span class="c">-- or booking_id not found → error logged</span></pre>
+      </div>
+
+    </div><!-- /panel-confirm -->
+
+    <!-- CANCEL -->
+    <div id="panel-cancel" class="msg-panel">
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#3b82f6"></div>
+          1 · HTTP Request → Booking Service
+        </div>
+        <pre><span class="kw">DELETE</span> /api/v1/bookings/<span class="n">98e15093-3999-499d-a38a-47cc5d5e5763</span>
+       ?event_id=<span class="n">evt-001</span>&amp;seat_id=<span class="n">A3</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#ef4444"></div>
+          2 · Redis — Release Lock (Lua Script, Immediate)
+        </div>
+        <pre><span class="c"># Lua script — atomic check-then-delete</span>
+<span class="rd">EVAL</span> <span class="s">"if redis.call('GET', KEYS[1]) == ARGV[1]
+      then return redis.call('DEL', KEYS[1])
+      end return 0"</span>
+  KEYS[1] = seat:lock:<span class="n">evt-001</span>:<span class="n">A3</span>
+  ARGV[1] = <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span>
+
+<span class="c"># Only deletes if the VALUE matches booking_id</span>
+<span class="c"># Prevents owner A from releasing owner B's lock</span>
+<span class="c"># Seat is FREE immediately after this call</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#f59e0b"></div>
+          3 · SQS Message Body
+        </div>
+        <pre><span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"event_id"</span><span class="p">:</span>   <span class="s">"evt-001"</span><span class="p">,</span>
+  <span class="k">"seat_id"</span><span class="p">:</span>    <span class="s">"A3"</span><span class="p">,</span>
+  <span class="k">"user_id"</span><span class="p">:</span>    <span class="s">""</span><span class="p">,</span>
+  <span class="k">"action"</span><span class="p">:</span>     <span class="s">"cancel"</span>
+<span class="p">}</span>
+
+<span class="c"># Redis lock already released above (synchronous)</span>
+<span class="c"># This message only updates the DB row</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#3b82f6"></div>
+          4 · HTTP Response → Client
+        </div>
+        <pre><span class="c">HTTP/1.1 200 OK</span>
+
+<span class="p">{</span>
+  <span class="k">"booking_id"</span><span class="p">:</span> <span class="s">"98e15093-3999-499d-a38a-47cc5d5e5763"</span><span class="p">,</span>
+  <span class="k">"status"</span><span class="p">:</span>     <span class="s">"cancelled"</span>
+<span class="p">}</span>
+
+<span class="c"># Seat is already free at this point</span>
+<span class="c"># Another user can reserve A3 immediately</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header">
+          <div class="dot" style="background:#6366f1"></div>
+          5 · PostgreSQL — Row Updated by Worker
+        </div>
+        <pre><span class="kw">UPDATE</span> bookings
+<span class="kw">SET</span>
+  status     = <span class="s">'cancelled'</span><span class="p">,</span>
+  updated_at = <span class="kw">NOW</span>()
+<span class="kw">WHERE</span>
+  id = <span class="s">'98e15093-3999-499d-a38a-47cc5d5e5763'</span><span class="p">;</span>
+
+<span class="c">-- Resulting row:</span>
+<span class="c">-- id         | 98e15093-...          </span>
+<span class="c">-- status     | cancelled  ← changed  </span>
+<span class="c">-- updated_at | 2026-06-19 07:47:10+00</span>
+
+<span class="c">-- Worker also runs the Lua DEL again</span>
+<span class="c">-- (idempotent — safe if already released)</span></pre>
+      </div>
+
+    </div><!-- /panel-cancel -->
+  </div><!-- /msg-section -->
+
+  <!-- ── BOOKING SERVICE DEEP DIVE ── -->
+  <div class="section-title">Booking Service — Full Logic Breakdown</div>
+  <p style="font-size:0.85rem;color:#64748b;margin-bottom:24px;">Every function, every file, every decision explained.</p>
+
+  <!-- FILE: main.go -->
+  <div style="margin-bottom:32px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 12px;font-family:monospace;font-size:0.78rem;color:#94a3b8;">cmd/main.go</div>
+      <div style="font-size:0.8rem;color:#64748b;">— startup, wiring, graceful shutdown</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#3b82f6"></div>1 · Connect to Redis</div>
+        <pre><span class="c">// Reads REDIS_ADDR env var (e.g. "redis:6379")</span>
+rdb := redis.NewUniversalClient(<span class="p">&</span>redis.UniversalOptions<span class="p">{</span>
+    Addrs: <span class="p">[]</span>string<span class="p">{</span>os.Getenv(<span class="s">"REDIS_ADDR"</span>)<span class="p">},</span>
+<span class="p">})</span>
+
+<span class="c">// UniversalClient supports both single node</span>
+<span class="c">// and cluster mode — same code works locally</span>
+<span class="c">// and on AWS ElastiCache</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#f59e0b"></div>2 · Connect to SQS</div>
+        <pre><span class="c">// Reads AWS env vars automatically:</span>
+<span class="c">// AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY</span>
+<span class="c">// AWS_ENDPOINT_URL (points to LocalStack)</span>
+cfg, _ := config.LoadDefaultConfig(ctx)
+sqsClient := sqs.NewFromConfig(cfg)
+
+publisher := queue.NewSQSPublisher(
+    sqsClient,
+    os.Getenv(<span class="s">"SQS_QUEUE_URL"</span>),
+)</pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#22c55e"></div>3 · Register Routes</div>
+        <pre><span class="c">// gin.Recovery() catches panics so the</span>
+<span class="c">// server doesn't crash on bad requests</span>
+r := gin.New()
+r.Use(gin.Recovery())
+
+r.GET(<span class="s">"/healthz"</span>, ...)   <span class="c">← always 200</span>
+r.GET(<span class="s">"/readyz"</span>, ...)    <span class="c">← pings Redis</span>
+
+api := r.Group(<span class="s">"/api/v1"</span>)
+api.GET   (<span class="s">"/events"</span>,                  h.ListEvents)
+api.POST  (<span class="s">"/events/:event_id/reserve"</span>, h.Reserve)
+api.POST  (<span class="s">"/bookings/:booking_id/confirm"</span>, h.Confirm)
+api.DELETE(<span class="s">"/bookings/:booking_id"</span>,     h.Cancel)</pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#a78bfa"></div>4 · Graceful Shutdown</div>
+        <pre><span class="c">// Listens for SIGTERM or SIGINT (Ctrl+C / docker stop)</span>
+quit := make(chan os.Signal, 1)
+signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+<span class="p">&lt;-</span>quit  <span class="c">← blocks here until signal received</span>
+
+<span class="c">// Gives in-flight requests 15s to finish</span>
+ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+srv.Shutdown(ctx)
+
+<span class="c">// Prevents dropped requests during deploy/restart</span></pre>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FILE: handler/booking.go -->
+  <div style="margin-bottom:32px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 12px;font-family:monospace;font-size:0.78rem;color:#94a3b8;">internal/handler/booking.go</div>
+      <div style="font-size:0.8rem;color:#64748b;">— 4 handler functions, each maps to one route</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#22c55e"></div>ListEvents — GET /api/v1/events</div>
+        <pre><span class="c">// Hardcoded mock — no DB call needed</span>
+<span class="c">// Returns the 2 available events</span>
+c.JSON(<span class="n">200</span>, gin.H<span class="p">{</span>
+  <span class="s">"events"</span>: <span class="p">[]</span>gin.H<span class="p">{</span>
+    <span class="p">{</span>
+      <span class="s">"id"</span>:          <span class="s">"evt-001"</span><span class="p">,</span>
+      <span class="s">"name"</span>:        <span class="s">"Rock the Arena"</span><span class="p">,</span>
+      <span class="s">"venue"</span>:       <span class="s">"Bangkok Arena"</span><span class="p">,</span>
+      <span class="s">"date"</span>:        <span class="s">"2026-08-01"</span><span class="p">,</span>
+      <span class="s">"total_seats"</span>: <span class="n">5000</span>
+    <span class="p">},</span>
+    <span class="p">{</span>
+      <span class="s">"id"</span>:          <span class="s">"evt-002"</span><span class="p">,</span>
+      <span class="s">"name"</span>:        <span class="s">"Jazz Night"</span><span class="p">,</span>
+      <span class="s">"venue"</span>:       <span class="s">"IMPACT"</span><span class="p">,</span>
+      <span class="s">"date"</span>:        <span class="s">"2026-09-15"</span><span class="p">,</span>
+      <span class="s">"total_seats"</span>: <span class="n">2000</span>
+    <span class="p">},</span>
+  <span class="p">},</span>
+<span class="p">})</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#3b82f6"></div>Reserve — POST /api/v1/events/:event_id/reserve</div>
+        <pre><span class="c">// Step 1: Validate request body</span>
+type reserveRequest struct <span class="p">{</span>
+  SeatID string <span class="s">`json:"seat_id" binding:"required"`</span>
+  UserID string <span class="s">`json:"user_id" binding:"required"`</span>
+<span class="p">}</span>
+<span class="c">// binding:"required" → auto 400 if missing</span>
+
+<span class="c">// Step 2: Generate unique booking ID</span>
+bookingID := uuid.New().String()
+
+<span class="c">// Step 3: Lock seat in Redis (SET NX)</span>
+err := h.locker.AcquireSeat(ctx, eventID, seatID, bookingID)
+<span class="c">// ErrAlreadyLocked → 409 Conflict</span>
+<span class="c">// other error     → 500</span>
+
+<span class="c">// Step 4: Publish to SQS</span>
+err = h.publisher.Publish(ctx, BookingMessage<span class="p">{</span>
+  Action: <span class="s">"reserve"</span>, ...
+<span class="p">})</span>
+<span class="c">// if SQS fails → release Redis lock → 500</span>
+
+<span class="c">// Step 5: Return 202 with booking_id</span>
+c.JSON(<span class="n">202</span>, gin.H<span class="p">{</span><span class="s">"booking_id"</span>: bookingID, ...<span class="p">})</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#22c55e"></div>Confirm — POST /api/v1/bookings/:booking_id/confirm</div>
+        <pre><span class="c">// booking_id comes from URL param</span>
+bookingID := c.Param(<span class="s">"booking_id"</span>)
+
+<span class="c">// Validate body (all 3 fields required)</span>
+type confirmRequest struct <span class="p">{</span>
+  UserID  string <span class="s">`json:"user_id"  binding:"required"`</span>
+  EventID string <span class="s">`json:"event_id" binding:"required"`</span>
+  SeatID  string <span class="s">`json:"seat_id"  binding:"required"`</span>
+<span class="p">}</span>
+
+<span class="c">// No Redis interaction here!</span>
+<span class="c">// Just publish to SQS with action:"confirm"</span>
+h.publisher.Publish(ctx, BookingMessage<span class="p">{</span>
+  Action: <span class="s">"confirm"</span>, ...
+<span class="p">})</span>
+
+<span class="c">// Worker will UPDATE status = 'confirmed' in DB</span>
+c.JSON(<span class="n">202</span>, gin.H<span class="p">{</span><span class="s">"status"</span>: <span class="s">"confirming"</span><span class="p">})</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#ef4444"></div>Cancel — DELETE /api/v1/bookings/:booking_id</div>
+        <pre><span class="c">// booking_id from URL param</span>
+bookingID := c.Param(<span class="s">"booking_id"</span>)
+
+<span class="c">// event_id and seat_id from query string</span>
+<span class="c">// needed to build the Redis key</span>
+eventID := c.Query(<span class="s">"event_id"</span>)
+seatID  := c.Query(<span class="s">"seat_id"</span>)
+<span class="c">// missing → 400 Bad Request</span>
+
+<span class="c">// Release Redis lock IMMEDIATELY (synchronous)</span>
+<span class="c">// Seat is free before we even respond</span>
+h.locker.ReleaseSeat(ctx, eventID, seatID, bookingID)
+
+<span class="c">// Publish cancel to SQS (DB update async)</span>
+h.publisher.Publish(ctx, BookingMessage<span class="p">{</span>
+  Action: <span class="s">"cancel"</span>, ...
+<span class="p">})</span>
+
+c.JSON(<span class="n">200</span>, gin.H<span class="p">{</span><span class="s">"status"</span>: <span class="s">"cancelled"</span><span class="p">})</span></pre>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FILE: lock/redis.go -->
+  <div style="margin-bottom:32px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 12px;font-family:monospace;font-size:0.78rem;color:#94a3b8;">internal/lock/redis.go</div>
+      <div style="font-size:0.8rem;color:#64748b;">— distributed seat locking via Redis</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#ef4444"></div>AcquireSeat — lock a seat</div>
+        <pre><span class="c">// Key format</span>
+key = <span class="s">"seat:lock:evt-001:A3"</span>
+
+<span class="c">// SET NX = set only if Not eXists</span>
+<span class="c">// Atomic — no race condition possible</span>
+ok, err := rdb.SetNX(ctx, key, bookingID, 10*time.Minute)
+
+<span class="c">// ok = true  → key was new → lock acquired</span>
+<span class="c">// ok = false → key existed → ErrAlreadyLocked</span>
+
+<span class="c">// TTL = 10 minutes</span>
+<span class="c">// Lock auto-deletes if user never confirms</span>
+<span class="c">// Seat becomes free again automatically</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#ef4444"></div>ReleaseSeat — unlock a seat safely</div>
+        <pre><span class="c">// Cannot use simple DEL — what if lock expired</span>
+<span class="c">// and someone else re-locked the seat?</span>
+<span class="c">// We'd delete their lock by mistake!</span>
+
+<span class="c">// Lua script runs atomically on Redis</span>
+<span class="c">// GET + DEL in a single operation</span>
+script = <span class="s">`
+  if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("DEL", KEYS[1])
+  end
+  return 0
+`</span>
+
+<span class="c">// KEYS[1] = "seat:lock:evt-001:A3"</span>
+<span class="c">// ARGV[1] = booking_id (the owner)</span>
+<span class="c">// Only deletes if current value = our booking_id</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#ef4444"></div>ExtendSeat — reset the TTL (keep-alive)</div>
+        <pre><span class="c">// Used to extend the 10-min window</span>
+<span class="c">// if the user is still on the checkout page</span>
+
+script = <span class="s">`
+  if redis.call("GET", KEYS[1]) == ARGV[1] then
+    return redis.call("EXPIRE", KEYS[1], ARGV[2])
+  end
+  return 0
+`</span>
+
+<span class="c">// ARGV[2] = 600 (seconds = 10 min)</span>
+<span class="c">// Only resets TTL if we are still the owner</span>
+<span class="c">// Note: not called anywhere yet — reserved</span>
+<span class="c">// for future keep-alive ping feature</span></pre>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FILE: queue/sqs.go -->
+  <div style="margin-bottom:48px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px 12px;font-family:monospace;font-size:0.78rem;color:#94a3b8;">internal/queue/sqs.go</div>
+      <div style="font-size:0.8rem;color:#64748b;">— SQS message publisher</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#f59e0b"></div>BookingMessage struct</div>
+        <pre><span class="c">// The shape of every SQS message</span>
+type BookingMessage struct <span class="p">{</span>
+  BookingID string <span class="s">`json:"booking_id"`</span>
+  EventID   string <span class="s">`json:"event_id"`</span>
+  SeatID    string <span class="s">`json:"seat_id"`</span>
+  UserID    string <span class="s">`json:"user_id"`</span>
+  Action    string <span class="s">`json:"action"`</span>
+  <span class="c">// action = "reserve" | "confirm" | "cancel"</span>
+<span class="p">}</span>
+
+<span class="c">// Same struct used by both</span>
+<span class="c">// booking-service (publish)</span>
+<span class="c">// worker-service  (consume)</span></pre>
+      </div>
+
+      <div class="msg-block">
+        <div class="msg-block-header"><div class="dot" style="background:#f59e0b"></div>Publish — send message to SQS</div>
+        <pre><span class="c">// Step 1: Serialize struct to JSON bytes</span>
+body, _ := json.Marshal(msg)
+
+<span class="c">// Step 2: Send to SQS with metadata</span>
+client.SendMessage(ctx, <span class="p">&</span>sqs.SendMessageInput<span class="p">{</span>
+  QueueUrl:    <span class="s">"...booking-queue.fifo"</span><span class="p">,</span>
+  MessageBody: string(body)<span class="p">,</span>
+
+  MessageGroupId: msg.EventID<span class="p">,</span>
+  <span class="c">// ↑ Groups messages by event</span>
+  <span class="c">// Messages in same group stay in order</span>
+
+  MessageDeduplicationId: uuid.New()<span class="p">,</span>
+  <span class="c">// ↑ New UUID every time</span>
+  <span class="c">// Prevents SQS from dropping "duplicate"</span>
+  <span class="c">// messages sent close together</span>
+<span class="p">})</span></pre>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ERROR HANDLING SUMMARY -->
+  <div style="margin-bottom:48px;">
+    <div style="font-size:1.05rem;font-weight:700;color:#f1f5f9;margin-bottom:16px;">Error Handling Summary</div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th>Where it happens</th>
+            <th>What the service does</th>
+            <th>HTTP Response</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Missing <code>seat_id</code> or <code>user_id</code> in body</td>
+            <td>handler — <code>ShouldBindJSON</code></td>
+            <td>Gin auto-rejects with validation error message</td>
+            <td><span class="method GET" style="background:#2d2010;color:#fcd34d">400</span></td>
+          </tr>
+          <tr>
+            <td>Seat already locked by another user</td>
+            <td>lock — <code>AcquireSeat</code> returns <code>ErrAlreadyLocked</code></td>
+            <td>Returns "seat already taken", does not publish to SQS</td>
+            <td><span class="method GET" style="background:#3b1f1f;color:#fca5a5">409</span></td>
+          </tr>
+          <tr>
+            <td>Redis is down</td>
+            <td>lock — <code>SetNX</code> returns error</td>
+            <td>Returns "failed to reserve seat"</td>
+            <td><span class="method GET" style="background:#3b1f1f;color:#fca5a5">500</span></td>
+          </tr>
+          <tr>
+            <td>SQS publish fails after Redis lock acquired</td>
+            <td>handler — <code>Publish</code> returns error</td>
+            <td>Releases the Redis lock first, then returns error (seat is freed)</td>
+            <td><span class="method GET" style="background:#3b1f1f;color:#fca5a5">500</span></td>
+          </tr>
+          <tr>
+            <td>Cancel without <code>event_id</code> or <code>seat_id</code></td>
+            <td>handler — <code>c.Query()</code> check</td>
+            <td>Returns "event_id and seat_id required"</td>
+            <td><span class="method GET" style="background:#2d2010;color:#fcd34d">400</span></td>
+          </tr>
+          <tr>
+            <td>Redis is down during cancel</td>
+            <td>lock — <code>ReleaseSeat</code> returns error</td>
+            <td>Error is ignored (<code>_ =</code>), continues to publish cancel to SQS anyway</td>
+            <td><span class="method GET" style="background:#1a2e1a;color:#86efac">200</span></td>
+          </tr>
+          <tr>
+            <td>Service receives SIGTERM (docker stop)</td>
+            <td>main — signal handler</td>
+            <td>Waits up to 15s for in-flight requests to finish before exiting</td>
+            <td>— graceful</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── NOTE ── -->
+  <div class="note">
+    <strong>Why is the API asynchronous?</strong> The Booking Service returns immediately after locking Redis and publishing to SQS. It does not wait for the Worker to write to Postgres. This keeps API latency low under load — the database write happens in the background. The tradeoff is eventual consistency: right after reserving, the booking may not yet appear in Postgres, but it will within seconds once the Worker processes the SQS message.
+  </div>
+
+  <script>
+    function showPanel(name, btn) {
+      document.querySelectorAll('.msg-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.msg-tab').forEach(t => t.className = 'msg-tab');
+      document.getElementById('panel-' + name).classList.add('active');
+      btn.classList.add('active-' + name);
+    }
+    document.querySelector('.msg-tab').classList.add('active-reserve');
+
+    function showTrace(id, btn) {
+      document.querySelectorAll('.trace-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.trace-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      btn.classList.add('active');
+    }
+  </script>
+</body>
+</html>

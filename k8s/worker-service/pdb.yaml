@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-service-pdb
+  namespace: ticketing
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: worker-service

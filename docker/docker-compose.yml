@@ -1,0 +1,134 @@
+# Local development stack — mirrors production topology without EKS/AWS costs.
+# Uses LocalStack for SQS, real Postgres and Redis.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ticketing
+      POSTGRES_USER: ticketing
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketing"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:3
+    environment:
+      SERVICES: sqs
+      DEFAULT_REGION: ap-southeast-2
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD", "awslocal", "sqs", "list-queues"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+
+  init-sqs:
+    image: amazon/aws-cli
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ap-southeast-2
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        aws --endpoint-url=http://localstack:4566 sqs create-queue
+        --queue-name booking-dlq.fifo
+        --attributes FifoQueue=true,ContentBasedDeduplication=true &&
+        aws --endpoint-url=http://localstack:4566 sqs create-queue
+        --queue-name booking-queue.fifo
+        --attributes FifoQueue=true,ContentBasedDeduplication=true
+
+  tempo:
+    image: grafana/tempo:latest
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+      - tempodata:/var/tempo
+    ports:
+      - "3200:3200"  # Tempo HTTP API (query)
+      - "4317:4317"  # OTLP gRPC receiver
+      - "4318:4318"  # OTLP HTTP receiver
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    depends_on:
+      tempo:
+        condition: service_started
+    restart: on-failure
+
+  booking-service:
+    build:
+      context: ../booking-service
+    environment:
+      REDIS_ADDR: "redis:6379"
+      SQS_QUEUE_URL: "http://localstack:4566/000000000000/booking-queue.fifo"
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ap-southeast-2
+      OTEL_EXPORTER_OTLP_ENDPOINT: "tempo:4317"
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      init-sqs:
+        condition: service_completed_successfully
+      tempo:
+        condition: service_started
+    restart: on-failure
+
+  worker-service:
+    build:
+      context: ../worker-service
+    environment:
+      DATABASE_URL: "postgres://ticketing:secret@postgres:5432/ticketing?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      SQS_QUEUE_URL: "http://localstack:4566/000000000000/booking-queue.fifo"
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: ap-southeast-2
+      OTEL_EXPORTER_OTLP_ENDPOINT: "tempo:4317"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      init-sqs:
+        condition: service_completed_successfully
+      tempo:
+        condition: service_started
+    restart: on-failure
+
+volumes:
+  pgdata:
+  tempodata:

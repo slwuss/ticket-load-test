@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketing-config
+  namespace: ticketing
+data:
+  sqs-queue-url: "https://sqs.ap-southeast-1.amazonaws.com/<ACCOUNT_ID>/booking-queue.fifo"
+---
+# Template — actual values injected by external-secrets or Terraform outputs
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ticketing-secrets
+  namespace: ticketing
+type: Opaque
+stringData:
+  redis-addr: "<ELASTICACHE_ENDPOINT>:6379"
+  database-url: "postgres://ticketing:<PASSWORD>@<RDS_ENDPOINT>:5432/ticketing?sslmode=require"

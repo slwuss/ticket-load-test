@@ -1,0 +1,65 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfstate.d/
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+crash.log
+crash.*.log
+
+# Terraform provider binaries
+*.exe
+
+# Sensitive variable files
+*.tfvars.json
+secrets.tfvars
+
+# Kubernetes
+kubeconfig
+kubeconfig.yaml
+*.kubeconfig
+
+# Environment variables / secrets
+.env
+.env.*
+
+# SSH keys (EC2 key pairs and general)
+*.pem
+*.key
+*.pub
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.key-pair.pem
+*-key-pair.pem
+*-keypair.pem
+*.ppk
+
+# TLS/SSL certificates
+*.crt
+*.p12
+*.pfx
+*.cer
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
