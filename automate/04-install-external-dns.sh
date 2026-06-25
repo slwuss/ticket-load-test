@@ -170,13 +170,26 @@ EXISTING_ASSOCIATION=$(aws eks list-pod-identity-associations \
 if [[ -n "${EXISTING_ASSOCIATION}" && "${EXISTING_ASSOCIATION}" != "None" ]]; then
   echo "Pod identity association for ${SERVICE_ACCOUNT_NAME} already exists."
 else
-  eksctl create podidentityassociation \
-    --cluster "${EKS_CLUSTER_NAME}" \
-    --namespace "${NAMESPACE}" \
-    --service-account-name "${SERVICE_ACCOUNT_NAME}" \
-    --role-name "${ROLE_NAME}" \
-    --permission-policy-arns "${POLICY_ARN}" \
-    --region "${AWS_REGION}"
+  ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+  EXISTING_ROLE_ARN="$(aws iam get-role --role-name "${ROLE_NAME}" --query 'Role.Arn' --output text 2>/dev/null || true)"
+
+  if [[ -n "${EXISTING_ROLE_ARN}" && "${EXISTING_ROLE_ARN}" != "None" ]]; then
+    echo "IAM role ${ROLE_NAME} already exists, reusing it..."
+    eksctl create podidentityassociation \
+      --cluster "${EKS_CLUSTER_NAME}" \
+      --namespace "${NAMESPACE}" \
+      --service-account-name "${SERVICE_ACCOUNT_NAME}" \
+      --role-arn "${EXISTING_ROLE_ARN}" \
+      --region "${AWS_REGION}"
+  else
+    eksctl create podidentityassociation \
+      --cluster "${EKS_CLUSTER_NAME}" \
+      --namespace "${NAMESPACE}" \
+      --service-account-name "${SERVICE_ACCOUNT_NAME}" \
+      --role-name "${ROLE_NAME}" \
+      --permission-policy-arns "${POLICY_ARN}" \
+      --region "${AWS_REGION}"
+  fi
 fi
 
 echo
