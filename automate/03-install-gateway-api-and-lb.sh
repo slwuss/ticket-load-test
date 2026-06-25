@@ -99,7 +99,7 @@ kubectl wait --for=condition=Established crd/gateways.gateway.networking.k8s.io 
 
 echo
 echo "Step 2: Installing LBC Gateway API CRDs..."
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/refs/heads/main/config/crd/gateway/gateway-crds.yaml || exit 1
+kubectl apply -f https://github.com/kubernetes-sigs/aws-load-balancer-controller/releases/download/v3.4.0/crds.yaml || exit 1
 kubectl wait --for=condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=120s
 
 echo
