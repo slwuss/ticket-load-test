@@ -162,59 +162,31 @@ if command -v aws >/dev/null 2>&1; then
   aws eks update-kubeconfig --region "$EKS_REGION" --name "$EKS_CLUSTER_NAME"
 
   echo
-  echo "Checking EKS access for current IAM identity..."
+  echo "Granting EKS cluster admin access to current IAM identity..."
   CALLER_ARN="$(aws sts get-caller-identity --query Arn --output text)"
   echo "Current identity: ${CALLER_ARN}"
 
-  EXISTING_ENTRY="$(aws eks list-access-entries \
+  # Create access entry — ignore error if it already exists
+  CREATE_OUTPUT="$(aws eks create-access-entry \
     --cluster-name "$EKS_CLUSTER_NAME" \
-    --region "$EKS_REGION" \
-    --query "accessEntries" \
-    --output text 2>/dev/null | tr '\t' '\n' | grep -Fx "$CALLER_ARN" || true)"
+    --principal-arn "$CALLER_ARN" \
+    --region "$EKS_REGION" 2>&1)" && \
+    echo "Access entry created." || \
+    { echo "$CREATE_OUTPUT" | grep -q "ResourceInUseException" && \
+      echo "Access entry already exists." || \
+      { echo "ERROR: Failed to create EKS access entry: ${CREATE_OUTPUT}" >&2; exit 1; }; }
 
-  if [[ -n "$EXISTING_ENTRY" ]]; then
-    echo "IAM identity already has EKS access. Checking policy..."
-    EXISTING_POLICY="$(aws eks list-associated-access-policies \
-      --cluster-name "$EKS_CLUSTER_NAME" \
-      --principal-arn "$CALLER_ARN" \
-      --region "$EKS_REGION" \
-      --query "associatedAccessPolicies[].policyArn" \
-      --output text 2>/dev/null | grep -F "AmazonEKSClusterAdminPolicy" || true)"
-
-    if [[ -n "$EXISTING_POLICY" ]]; then
-      echo "EKS cluster admin access already granted. No changes needed."
-    else
-      echo "Access entry exists but missing admin policy. Adding..."
-      aws eks associate-access-policy \
-        --cluster-name "$EKS_CLUSTER_NAME" \
-        --principal-arn "$CALLER_ARN" \
-        --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
-        --access-scope type=cluster \
-        --region "$EKS_REGION"
-      echo "EKS cluster admin policy granted."
-    fi
-  else
-    echo "No EKS access entry found. Creating access entry and granting admin policy..."
-    if ! aws eks create-access-entry \
-      --cluster-name "$EKS_CLUSTER_NAME" \
-      --principal-arn "$CALLER_ARN" \
-      --region "$EKS_REGION" 2>&1; then
-      echo "ERROR: Failed to create EKS access entry. Make sure your IAM user has eks:CreateAccessEntry permission." >&2
-      exit 1
-    fi
-
-    if ! aws eks associate-access-policy \
-      --cluster-name "$EKS_CLUSTER_NAME" \
-      --principal-arn "$CALLER_ARN" \
-      --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
-      --access-scope type=cluster \
-      --region "$EKS_REGION" 2>&1; then
-      echo "ERROR: Failed to associate EKS admin policy. Make sure your IAM user has eks:AssociateAccessPolicy permission." >&2
-      exit 1
-    fi
-
-    echo "EKS access entry created and cluster admin policy granted for ${CALLER_ARN}."
-  fi
+  # Associate admin policy — ignore error if already associated
+  POLICY_OUTPUT="$(aws eks associate-access-policy \
+    --cluster-name "$EKS_CLUSTER_NAME" \
+    --principal-arn "$CALLER_ARN" \
+    --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
+    --access-scope type=cluster \
+    --region "$EKS_REGION" 2>&1)" && \
+    echo "Admin policy granted." || \
+    { echo "$POLICY_OUTPUT" | grep -q "ResourceInUseException" && \
+      echo "Admin policy already associated." || \
+      { echo "ERROR: Failed to associate EKS admin policy: ${POLICY_OUTPUT}" >&2; exit 1; }; }
 
   echo
   echo "Verifying kubectl access..."
