@@ -109,23 +109,29 @@ if [[ "$EKSCTL_SUCCESS" == "false" ]]; then
   exit 1
 fi
 
-if ! kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
-  echo "eksctl did not create the K8s service account, creating it manually..."
-  ROLE_ARN=$(aws cloudformation describe-stacks \
-    --region "${AWS_REGION}" \
-    --query "Stacks[?contains(StackName,'${CLUSTER_NAME}') && contains(StackName,'aws-load-balancer')].Outputs[?OutputKey=='Role1'].OutputValue | [0]" \
-    --output text)
+ROLE_ARN=$(eksctl get iamserviceaccount \
+  --cluster "${CLUSTER_NAME}" \
+  --namespace kube-system \
+  --name aws-load-balancer-controller \
+  --region "${AWS_REGION}" \
+  -o json 2>/dev/null | jq -r '.[0].status.roleARN // empty')
 
-  if [[ -z "$ROLE_ARN" || "$ROLE_ARN" == "None" ]]; then
-    echo "Could not find IAM role ARN from CloudFormation" >&2
-    exit 1
-  fi
-
-  kubectl create serviceaccount aws-load-balancer-controller -n kube-system
-  kubectl annotate serviceaccount aws-load-balancer-controller \
-    -n kube-system \
-    eks.amazonaws.com/role-arn="${ROLE_ARN}"
+if [[ -z "$ROLE_ARN" ]]; then
+  echo "Could not find IAM role ARN for the service account" >&2
+  exit 1
 fi
+
+echo "Using IAM role: $ROLE_ARN"
+
+if ! kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
+  echo "Creating K8s service account..."
+  kubectl create serviceaccount aws-load-balancer-controller -n kube-system
+fi
+
+kubectl annotate serviceaccount aws-load-balancer-controller \
+  -n kube-system \
+  eks.amazonaws.com/role-arn="${ROLE_ARN}" \
+  --overwrite
 
 echo
 echo "Step 3: Fetching VPC ID..."
