@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -34,7 +35,8 @@ func main() {
 	}()
 
 	rdb := redis.NewUniversalClient(&redis.UniversalOptions{
-		Addrs: []string{os.Getenv("REDIS_ADDR")},
+		Addrs:     []string{os.Getenv("REDIS_ADDR")},
+		TLSConfig: &tls.Config{},
 	})
 
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -54,7 +56,9 @@ func main() {
 
 	r.GET("/healthz", func(c *gin.Context) { c.Status(http.StatusOK) })
 	r.GET("/readyz", func(c *gin.Context) {
-		if err := rdb.Ping(context.Background()).Err(); err != nil {
+		pingCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		if err := rdb.Ping(pingCtx).Err(); err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "redis unreachable"})
 			return
 		}

@@ -50,7 +50,16 @@ EXPECTED_POLICY_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:policy/${POLICY_NAME}"
 
 echo
 echo "Step 1: Downloading IAM policy..."
-curl -fsSL -o "${POLICY_FILE}" "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.14.1/docs/install/iam_policy.json"
+
+# Resolve the latest controller version from Helm to keep the IAM policy in sync
+helm repo add eks https://aws.github.io/eks-charts --force-update >/dev/null 2>&1
+helm repo update eks >/dev/null 2>&1
+LATEST_CHART_VERSION=$(helm search repo eks/aws-load-balancer-controller -o json \
+  | jq -r '.[0].version // empty')
+CONTROLLER_VERSION="v${LATEST_CHART_VERSION%%.*}.$(echo "$LATEST_CHART_VERSION" | cut -d. -f2).$(echo "$LATEST_CHART_VERSION" | cut -d. -f3)"
+
+curl -fsSL -o "${POLICY_FILE}" \
+  "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/${CONTROLLER_VERSION}/docs/install/iam_policy.json"
 
 echo "Checking IAM policy..."
 
@@ -76,6 +85,7 @@ aws iam wait policy-exists --policy-arn "$POLICY_ARN"
 echo
 echo "Step 2: Creating IAM service account for EKS..."
 
+EKSCTL_SUCCESS=false
 for i in {1..3}; do
   if eksctl create iamserviceaccount \
     --cluster="${CLUSTER_NAME}" \
@@ -85,6 +95,7 @@ for i in {1..3}; do
     --override-existing-serviceaccounts \
     --region "${AWS_REGION}" \
     --approve; then
+    EKSCTL_SUCCESS=true
     break
   fi
 
@@ -93,19 +104,18 @@ for i in {1..3}; do
 
 done
 
-if ! eksctl get iamserviceaccount \
-  --cluster="${CLUSTER_NAME}" \
-  --namespace=kube-system \
-  --name=aws-load-balancer-controller \
-  --region "${AWS_REGION}" >/dev/null 2>&1; then
+if [[ "$EKSCTL_SUCCESS" == "false" ]]; then
   echo "eksctl failed after retries" >&2
   exit 1
 fi
 
+if ! kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
+  echo "Service account was not created in the cluster" >&2
+  exit 1
+fi
+
 echo
-echo "Step 3: Adding Helm repo..."
-helm repo add eks https://aws.github.io/eks-charts
-helm repo update eks
+echo "Step 3: Fetching VPC ID..."
 
 VPC_ID=""
 if command -v aws >/dev/null 2>&1; then
@@ -119,10 +129,8 @@ fi
 
 echo
 echo "Step 4: Installing AWS Load Balancer Controller..."
-LATEST_VERSION=$(helm search repo eks/aws-load-balancer-controller -o json \
-  | jq -r '.[0].version // empty')
 
-if [[ -z "$LATEST_VERSION" ]]; then
+if [[ -z "$LATEST_CHART_VERSION" ]]; then
   echo "Cannot determine Helm chart version" >&2
   exit 1
 fi
@@ -136,7 +144,7 @@ helm upgrade -i aws-load-balancer-controller eks/aws-load-balancer-controller \
   --set serviceAccount.name=aws-load-balancer-controller \
   --set controllerConfig.featureGates.NLBGatewayAPI=true \
   --set controllerConfig.featureGates.ALBGatewayAPI=true \
-  --version "${LATEST_VERSION}"
+  --version "${LATEST_CHART_VERSION}"
 
 echo
 echo "Step 5: Verifying installation..."
