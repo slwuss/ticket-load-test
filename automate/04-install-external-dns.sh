@@ -204,7 +204,8 @@ helm upgrade -i external-dns external-dns/external-dns \
   -n "${NAMESPACE}" \
   --version "${CHART_VERSION}" \
   -f "${VALUES_FILE}" \
-  --set "provider.aws.region=${AWS_REGION}"
+  --set "env[0].name=AWS_DEFAULT_REGION" \
+  --set "env[0].value=${AWS_REGION}"
 
 echo
 echo "Step 7: Verifying installation..."
