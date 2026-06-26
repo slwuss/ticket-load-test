@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -35,8 +34,7 @@ func main() {
 	}()
 
 	rdb := redis.NewUniversalClient(&redis.UniversalOptions{
-		Addrs:     []string{os.Getenv("REDIS_ADDR")},
-		TLSConfig: &tls.Config{},
+		Addrs: []string{os.Getenv("REDIS_ADDR")},
 	})
 
 	cfg, err := config.LoadDefaultConfig(ctx)
