@@ -199,15 +199,25 @@ helm repo update external-dns
 
 echo
 echo "Step 6: Installing ExternalDNS via Helm..."
+aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}" >/dev/null
 helm upgrade -i external-dns external-dns/external-dns \
   -n "${NAMESPACE}" \
   --version "${CHART_VERSION}" \
   -f "${VALUES_FILE}" \
-  --set "extraArgs[0]=--aws-region=${AWS_REGION}" \
-  --wait --timeout 5m
+  --set "extraArgs[0]=--aws-region=${AWS_REGION}"
 
 echo
 echo "Step 7: Verifying installation..."
+echo "Waiting for ExternalDNS pod to be ready..."
+if ! kubectl rollout status deployment/external-dns -n "${NAMESPACE}" --timeout=3m; then
+  echo
+  echo "Pod did not become ready in time. Checking status..." >&2
+  kubectl get pods -n "${NAMESPACE}"
+  echo
+  kubectl describe pods -n "${NAMESPACE}" | tail -30
+  exit 1
+fi
+
 kubectl get pod -n "${NAMESPACE}"
 
 echo
