@@ -134,7 +134,11 @@ kubectl annotate serviceaccount aws-load-balancer-controller \
   --overwrite
 
 echo
-echo "Step 3: Fetching VPC ID..."
+echo "Step 3: Installing Gateway API CRDs..."
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/experimental-install.yaml
+
+echo
+echo "Step 4: Fetching VPC ID..."
 
 VPC_ID=""
 if command -v aws >/dev/null 2>&1; then
@@ -147,7 +151,7 @@ if [[ -z "${VPC_ID}" || "${VPC_ID}" == "None" ]]; then
 fi
 
 echo
-echo "Step 4: Installing AWS Load Balancer Controller..."
+echo "Step 5: Installing AWS Load Balancer Controller..."
 
 if [[ -z "$LATEST_CHART_VERSION" ]]; then
   echo "Cannot determine Helm chart version" >&2
@@ -166,7 +170,7 @@ helm upgrade -i aws-load-balancer-controller eks/aws-load-balancer-controller \
   --version "${LATEST_CHART_VERSION}"
 
 echo
-echo "Step 5: Verifying installation..."
+echo "Step 6: Verifying installation..."
 kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null \
   || {
     echo "Controller deployment not found" >&2
