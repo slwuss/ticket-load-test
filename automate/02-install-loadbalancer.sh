@@ -110,8 +110,21 @@ if [[ "$EKSCTL_SUCCESS" == "false" ]]; then
 fi
 
 if ! kubectl get serviceaccount aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
-  echo "Service account was not created in the cluster" >&2
-  exit 1
+  echo "eksctl did not create the K8s service account, creating it manually..."
+  ROLE_ARN=$(aws cloudformation describe-stacks \
+    --region "${AWS_REGION}" \
+    --query "Stacks[?contains(StackName,'${CLUSTER_NAME}') && contains(StackName,'aws-load-balancer')].Outputs[?OutputKey=='Role1'].OutputValue | [0]" \
+    --output text)
+
+  if [[ -z "$ROLE_ARN" || "$ROLE_ARN" == "None" ]]; then
+    echo "Could not find IAM role ARN from CloudFormation" >&2
+    exit 1
+  fi
+
+  kubectl create serviceaccount aws-load-balancer-controller -n kube-system
+  kubectl annotate serviceaccount aws-load-balancer-controller \
+    -n kube-system \
+    eks.amazonaws.com/role-arn="${ROLE_ARN}"
 fi
 
 echo
