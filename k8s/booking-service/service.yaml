@@ -18,9 +18,14 @@ metadata:
   name: booking-route
   namespace: ticketing
 spec:
+  hostnames:
+    - "project-cruddur.com"
   parentRefs:
-    - name: app-alb-gateway
+    - group: gateway.networking.k8s.io
       namespace: default
+      kind: Gateway
+      name: app-alb-gateway
+      sectionName: https
   rules:
     - matches:
         - path:
@@ -29,3 +34,14 @@ spec:
       backendRefs:
         - name: booking-service
           port: 80
+---
+apiVersion: gateway.k8s.aws/v1beta1
+kind: TargetGroupConfiguration
+metadata:
+  name: booking-tg-config
+  namespace: ticketing
+spec:
+  targetReference:
+    name: booking-service
+  defaultConfiguration:
+    targetType: ip
