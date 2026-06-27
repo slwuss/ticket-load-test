@@ -25,7 +25,7 @@ spec:
       namespace: default
       kind: Gateway
       name: app-alb-gateway
-      sectionName: https
+      sectionName: https-root
   rules:
     - matches:
         - path:

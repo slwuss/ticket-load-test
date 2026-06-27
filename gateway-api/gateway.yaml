@@ -15,13 +15,27 @@ spec:
   - name: http
     protocol: HTTP
     port: 80
-    hostname: "DOMAIN_NAME_PLACEHOLDER"
+    hostname: "*.project-cruddur.com"
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: http-root
+    protocol: HTTP
+    port: 80
+    hostname: "project-cruddur.com"
     allowedRoutes:
       namespaces:
         from: All
   - name: https
     protocol: HTTPS
-    hostname: "DOMAIN_NAME_PLACEHOLDER"
+    hostname: "*.project-cruddur.com"
+    port: 443
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https-root
+    protocol: HTTPS
+    hostname: "project-cruddur.com"
     port: 443
     allowedRoutes:
       namespaces:
